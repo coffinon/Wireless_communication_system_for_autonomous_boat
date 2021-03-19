@@ -1,23 +1,10 @@
+from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox
+from PyQt5.QtGui import QCloseEvent
+from PyQt5.uic import loadUi
 import serial
 import sys
 import time
-from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox
-from PyQt5.QtCore import QRunnable, QThreadPool
-from PyQt5.QtGui import QCloseEvent
-from PyQt5.uic import loadUi
-
-
-class Runnable(QRunnable):
-    def __init__(self, ser):
-        super().__init__()
-        self.ser = ser
-
-    def run(self):
-        # Your long-running task goes here ...
-        while True:
-            packet = self.ser.read(4)
-            print(str(packet))
-            time.sleep(1)
+import threading
 
 
 class AppWindow(QMainWindow):
@@ -25,10 +12,10 @@ class AppWindow(QMainWindow):
         super(AppWindow, self).__init__()
         loadUi('main_window.ui', self)
 
-        # with open("style.qss", "r") as f:
+        #with open("style.qss", "r") as f:
         #    _style = f.read()
         #    self.setStyleSheet(_style)
-        # f.close()
+        #f.close()
 
         self.ser = serial.Serial()
         self.ser.baudrate = 115200
@@ -37,20 +24,26 @@ class AppWindow(QMainWindow):
         self.comboBox.addItems(self.serial_ports())
         self.pushButton_2.clicked.connect(self.serial_port_connect)
 
-        self.pool = QThreadPool.globalInstance()
-        self.runnable = Runnable(self.ser)
+        self.update_thread = threading.Thread(target=self.update_data)
 
         self.show()
 
     def emergency_stop(self):
-        self.ser.write("1".encode())
+        reply = QMessageBox.question(self, "Message", "Czy na pewno chcesz wyłączyć autonomika ?",
+                                     QMessageBox.Yes | QMessageBox.No,
+                                     QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            self.ser.write("1".encode())
+            self.ser.close()
 
     def update_data(self):
-        packet = self.ser.read(4)
-        self.lineEdit_2.setText(str(packet[0]))
-        self.lineEdit_6.setText(str(packet[1]))
-        self.lineEdit_7.setText(str(packet[2]))
-        self.lineEdit_8.setText(str(packet[3]))
+        while self.ser.isOpen():
+            packet = self.ser.read(4)
+            self.lineEdit_2.setText(str(packet[0]))
+            self.lineEdit_6.setText(str(packet[1]))
+            self.lineEdit_7.setText(str(packet[2]))
+            self.lineEdit_8.setText(str(packet[3]))
+            time.sleep(0.2)
 
     def closeEvent(self, event: QCloseEvent):
         reply = QMessageBox.question(self, "Message", "Czy na pewno chcesz wyłączyć program ?",
@@ -80,7 +73,8 @@ class AppWindow(QMainWindow):
             self.ser.port = str(self.comboBox.currentText())
             self.pushButton.setEnabled(True)
             self.pushButton_2.setEnabled(False)
-            self.pool.start(self.runnable)
+            self.ser.open()
+            self.update_thread.start()
 
 
 if __name__ == "__main__":
